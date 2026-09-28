@@ -603,7 +603,8 @@ def root():
 @app.get("/health")
 def health():
     return {
-        "status": "healthy",
+        "status": "ok",
+        "healthy": True,
         "ml_ready": (
             processor.processor.pipeline.is_ml_ready()
         ),
