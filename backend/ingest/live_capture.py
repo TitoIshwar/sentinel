@@ -268,21 +268,31 @@ class LivePacketCapture:
                 return
 
             try:
-                self._sniffer = AsyncSniffer(
-                    iface=self.interface,
-                    store=False,
-                    prn=self._on_packet,
-                )
+                kwargs: dict[str, Any] = {
+                    "iface": self.interface,
+                    "store": False,
+                    "prn": self._on_packet,
+                }
+                if not getattr(conf, "use_pcap", False) and getattr(conf, "L3socket", None):
+                    kwargs["L2socket"] = conf.L3socket
 
+                self._sniffer = AsyncSniffer(**kwargs)
                 self._sniffer.start()
+
+                import time
+                time.sleep(0.1)
+                if getattr(self._sniffer, "exception", None):
+                    thread_exc = self._sniffer.exception
+                    self._sniffer = None
+                    raise thread_exc
 
             except Exception as exc:
                 self._sniffer = None
 
                 raise LiveCaptureError(
                     "Live capture could not start. "
-                    "Verify that the selected interface is a valid "
-                    "Npcap interface and that Npcap is running. "
+                    "Verify that Npcap is installed and running on Windows, "
+                    "or run the capture client in an Administrator terminal. "
                     f"Underlying error: {exc}"
                 ) from exc
 
