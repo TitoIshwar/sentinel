@@ -27,6 +27,8 @@ export const DashboardPage: React.FC = () => {
     scenario,
     startStream,
     stopStream,
+    clientConnected,
+    captureMode,
   } = useSecurity();
 
   const risk = intelligence.length
@@ -73,6 +75,41 @@ export const DashboardPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {sourceMode === 'live' && (
+        <div
+          className={`flex items-center justify-between p-3.5 rounded-xl border text-xs ${
+            clientConnected
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                clientConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              }`}
+            />
+            <div>
+              <b className="font-semibold">
+                {clientConnected
+                  ? 'Windows Capture Client Connected'
+                  : 'Waiting for Windows Capture Client'}
+              </b>
+              <span className="text-slate-400 ml-2">
+                {clientConnected
+                  ? 'Streaming real live hardware packets to Render backend.'
+                  : 'Render cloud cannot access laptop IntCap directly. Run windows_client.py on your Windows laptop.'}
+              </span>
+            </div>
+          </div>
+          {!clientConnected && (
+            <code className="hidden sm:inline-block font-mono bg-black/40 px-2.5 py-1 rounded text-cyan-300 border border-slate-700/50">
+              python windows_client.py
+            </code>
+          )}
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard

@@ -181,10 +181,20 @@ export interface TrafficHistoryPoint {
   anomaly: number;
 }
 
-const API_BASE = (
-  import.meta.env.VITE_SENTINEL_API_URL ||
-  'http://127.0.0.1:8000'
-).replace(/\/$/, '');
+const STORAGE_KEY = 'sentinel_api_url';
+
+function getApiBase(): string {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && stored.trim()) return stored.trim().replace(/\/$/, '');
+  } catch { /* ignore */ }
+  return (
+    import.meta.env.VITE_SENTINEL_API_URL ||
+    'http://127.0.0.1:8000'
+  ).replace(/\/$/, '');
+}
+
+const API_BASE = getApiBase();
 
 const emptyWindow: WindowFeatures = {
   packet_count: 0,
@@ -580,6 +590,9 @@ interface SecurityContextType {
   navigateToFlow: (id: string) => void;
 
   apiBase: string;
+  setApiBaseUrl: (url: string) => void;
+  clientConnected: boolean;
+  captureMode: 'local' | 'cloud';
 
   connection: ConnectionState;
 
@@ -716,7 +729,17 @@ export const SecurityProvider: React.FC<{
   const snapshotRef =
     useRef<PipelineSnapshot | null>(null);
 
-  const apiBase = API_BASE;
+  const [clientConnected, setClientConnected] = useState(false);
+  const [captureMode, setCaptureMode] = useState<'local' | 'cloud'>('local');
+
+  const [apiBase, setApiBaseState] = useState(API_BASE);
+
+  const setApiBaseUrl = useCallback((url: string) => {
+    const clean = url.trim().replace(/\/$/, '');
+    try { localStorage.setItem(STORAGE_KEY, clean); } catch { /* ignore */ }
+    // Reload so all existing fetch calls use the new URL.
+    window.location.reload();
+  }, []);
 
   const setConnectionSafe = useCallback(
     (state: ConnectionState) => {
@@ -753,28 +776,37 @@ export const SecurityProvider: React.FC<{
             next.ml_anomaly_score,
         );
 
-      setTrafficHistory((history) => [
-        ...history,
-        {
-          time:
-            next.timestamp ||
-            new Date().toISOString(),
+      // STRICT RULE: Only append to trafficHistory if real packets have been processed!
+      // Never push dummy 0-points when no real data has been received.
+      const hasRealTraffic =
+        numberValue(next.telemetry?.packets_processed, 0) > 0 ||
+        numberValue(next.window?.packet_count, 0) > 0 ||
+        numberValue(next.window?.packets_per_second, 0) > 0;
 
-          pps: numberValue(
-            window.packets_per_second,
-          ),
+      if (hasRealTraffic) {
+        setTrafficHistory((history) => [
+          ...history,
+          {
+            time:
+              next.timestamp ||
+              new Date().toISOString(),
 
-          bps: numberValue(
-            window.bytes_per_second,
-          ),
+            pps: numberValue(
+              window.packets_per_second,
+            ),
 
-          syn: numberValue(
-            window.syns_per_second,
-          ),
+            bps: numberValue(
+              window.bytes_per_second,
+            ),
 
-          anomaly: ml,
-        },
-      ].slice(-120));
+            syn: numberValue(
+              window.syns_per_second,
+            ),
+
+            anomaly: ml,
+          },
+        ].slice(-120));
+      }
     },
     [],
   );
@@ -825,6 +857,8 @@ export const SecurityProvider: React.FC<{
         const data =
           (await response.json()) as BackendAnalysisResponse & {
             running?: boolean;
+            mode?: 'local' | 'cloud';
+            client_connected?: boolean;
             captured?: number;
             processed?: number;
             dropped?: number;
@@ -834,6 +868,13 @@ export const SecurityProvider: React.FC<{
               packet_timestamp?: number;
             };
           };
+
+        if (data.client_connected !== undefined) {
+          setClientConnected(Boolean(data.client_connected));
+        }
+        if (data.mode) {
+          setCaptureMode(data.mode as 'local' | 'cloud');
+        }
 
         /*
          * The live endpoint wraps Sentinel's analytical snapshot
@@ -1048,11 +1089,17 @@ export const SecurityProvider: React.FC<{
               : data.telemetry,
         };
 
-        consume(liveResponse);
+        if (data.processed !== undefined && data.processed > 0 && data.result) {
+          consume(liveResponse);
+        } else if (Object.keys(liveTelemetry).length > 0) {
+          setSnapshot((prev) => (prev ? { ...prev, telemetry: liveTelemetry } : null));
+        }
 
         setBackendOnline(true);
 
-        if (data.running === false) {
+        // In cloud mode, backend is waiting for remote Windows client, so do NOT terminate polling.
+        // Only terminate polling in local mode if capture has terminated and no client is connected.
+        if (data.mode !== 'cloud' && data.running === false && !data.client_connected) {
           clearLivePolling();
           setConnectionSafe('complete');
         }
@@ -1151,17 +1198,16 @@ export const SecurityProvider: React.FC<{
             pollLiveStatus();
           }, 1000);
 
-        // Check whether backend fell back to PCAP-loop demo mode
-        // (happens on cloud deployments where Npcap is unavailable).
-        const isDemo =
-          (data as unknown as Record<string, unknown>)?.demo_mode === true;
+        // Check whether backend is in cloud mode listening for remote Windows client
+        const isCloudListening =
+          (data as unknown as Record<string, unknown>)?.status === 'listening' ||
+          (data as unknown as Record<string, unknown>)?.mode === 'cloud';
 
-        if (isDemo) {
+        if (isCloudListening) {
           showToast(
             'info',
-            'Demo stream active',
-            'Live capture is unavailable in this environment. ' +
-              'Running bundled PCAP demo stream instead.',
+            'Live capture ready',
+            'Backend is listening. Start windows_client.py on your Windows laptop to stream live traffic.',
           );
         } else {
           showToast(
@@ -1632,9 +1678,9 @@ export const SecurityProvider: React.FC<{
         const res = await fetch(`${apiBase}/live/status`);
         if (!res.ok) return;
         const data = await res.json();
-        // If the backend worker is already running (demo or real),
-        // start polling so the dashboard fills immediately.
-        if (data?.running || data?.worker_running || data?.demo_mode) {
+        // If real capture is actively running (local capture or connected Windows client),
+        // resume polling.
+        if (data?.running && (data?.client_connected || data?.mode === 'local')) {
           setSourceMode('live');
           setConnectionSafe('capturing');
           await pollLiveStatus();
@@ -1643,7 +1689,7 @@ export const SecurityProvider: React.FC<{
           }, 1000);
         }
       } catch {
-        // Backend not ready yet — user can click the button manually.
+        // Backend not ready yet
       }
     }, 2000);
 
@@ -2144,6 +2190,9 @@ export const SecurityProvider: React.FC<{
         navigateToFlow,
 
         apiBase,
+        setApiBaseUrl,
+        clientConnected,
+        captureMode,
 
         connection,
 
@@ -2196,6 +2245,9 @@ export const SecurityProvider: React.FC<{
         alerts,
         analyzePcap,
         apiBase,
+        setApiBaseUrl,
+        clientConnected,
+        captureMode,
         backendOnline,
         backendStatus,
         clearAnalyticalState,

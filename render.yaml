@@ -1,22 +1,42 @@
-# Render deployment configuration — Sentinel backend
+# Render deployment blueprint — Sentinel (Backend & Frontend)
 # https://render.com/docs/render-yaml
 #
-# IMPORTANT — Live capture limitation:
-# The /live/* endpoints (POST /live/start, GET /live/status, POST /live/stop)
-# require a local Npcap/libpcap interface and physical network hardware.
-# They will NOT perform packet capture in Render's cloud environment.
-# All other endpoints (/analyze, /replay, /status, /interfaces, /health)
-# work normally on Render.
+# ARCHITECTURE:
+# The Sentinel backend runs passively as a Python Web Service on Render.
+# The Sentinel frontend runs as a Static Site on Render with client-side SPA routing.
+# Physical packet capture hardware (IntCap / Npcap) runs on the Windows operator machine
+# via `windows_client.py`, which securely transmits genuine captured packet records
+# to the backend /live/ingest endpoint.
 
 services:
   - type: web
     name: sentinel-backend
     runtime: python
-    # Root of the repository is the sentinel/ directory.
-    # If this file is committed at the repo root, no rootDir override needed.
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend.api.server:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
-      # PORT is injected automatically by Render — do not set it here.
+      - key: SENTINEL_MODE
+        value: "cloud"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: SENTINEL_CAPTURE_KEY
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  - type: static
+    name: sentinel-frontend
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_SENTINEL_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
