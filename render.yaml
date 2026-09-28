@@ -19,9 +19,9 @@ services:
       - key: SENTINEL_MODE
         value: "cloud"
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: "https://sentinel-frontend-sa42.onrender.com"
       - key: FRONTEND_URL
-        sync: false
+        value: "https://sentinel-frontend-sa42.onrender.com"
       - key: SENTINEL_CAPTURE_KEY
         sync: false
       - key: PYTHONUNBUFFERED
@@ -35,7 +35,7 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_SENTINEL_API_URL
-        sync: false
+        value: "https://sentinel-backend-6o0r.onrender.com"
     routes:
       - type: rewrite
         source: /*
