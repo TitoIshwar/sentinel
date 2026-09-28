@@ -7,3 +7,4 @@ __pycache__
 .pytest_cache
 frontend/
 tests/
+windows_client.py

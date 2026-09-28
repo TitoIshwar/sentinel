@@ -62,7 +62,11 @@ IS_CLOUD_DEPLOYMENT = bool(
 
 CAPTURE_API_KEY = os.getenv("SENTINEL_CAPTURE_KEY", "").strip()
 
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS") or os.getenv("FRONTEND_URL")
+allowed_origins_env = (
+    os.getenv("SENTINEL_ALLOWED_ORIGINS")
+    or os.getenv("ALLOWED_ORIGINS")
+    or os.getenv("FRONTEND_URL")
+)
 if allowed_origins_env:
     allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 else:
