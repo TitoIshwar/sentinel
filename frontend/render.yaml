@@ -13,12 +13,15 @@
 # a single index.html entry point.
 
 services:
-  - type: static
+  - type: web
     name: sentinel-frontend
+    runtime: static
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     envVars:
       - key: VITE_SENTINEL_API_URL
-        # Do NOT hardcode the value here. Set it in the Render dashboard.
-        # sync: false tells render.yaml to leave the value unset by default.
         sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

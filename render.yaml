@@ -28,8 +28,9 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
 
-  - type: static
+  - type: web
     name: sentinel-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
